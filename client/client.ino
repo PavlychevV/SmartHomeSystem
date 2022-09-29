@@ -1,33 +1,62 @@
 #include "headers/client.h"
 
-int port = 8888;
-WiFiServer server(port);
 WiFiClient client;
 
 const IPAddress serverIP (192,168,1,79);
 uint16_t serverPort =  62302;
 
+#if defined (ESP32)
+IPAddress local_IP(192, 168, 1, 87);
+#else
 IPAddress local_IP(192, 168, 1, 82);
+#endif
+
 IPAddress gateway(192, 168, 1, 254);
 IPAddress subnet(255, 255, 255, 0);
 
+Timer recvTimer;
+Timer filterTimer;
 Timer sendTimer;
 Timer idleTimer;
 
 ChangeHandler onButton;
 ChangeHandler offButton;
 
+const int ledPin = 5;
+
+const int freq = 5000;
+const int ledChannel = 0;
+const int resolution = 8;
+
+LowPassFilter filter;
+byte newValue, brightness;
+
 void setup() {
     Serial.begin(115200);
 
     WiFi.mode(WIFI_STA);
-    WiFi.begin(SSID, PASSWORD); // SSID and PASSWORD must be defined in headers/env.h!
+    WiFi.begin(SSID, PASSWORD); // SSID and PAfSSWORD must be defined in headers/env.h!
 
     pinMode(LED_BUILTIN, OUTPUT);
-    pinMode(5, OUTPUT);
 
+    #if defined (ESP32)
+
+    // Configure LED PWM functionalitites
+    ledcSetup(ledChannel, freq, resolution);
+
+    // Attach the channel to the GPIO to be controlled
+    ledcAttachPin(ledPin, ledChannel);
+    #else
+    pinMode(ledPin, OUTPUT);
+    #endif
+
+    #if defined (ESP32)
+    pinMode(4, INPUT_PULLDOWN);
+    pinMode(12, INPUT_PULLDOWN);
+    #else
     pinMode(4, INPUT);
     pinMode(12, INPUT);
+    #endif
 
     if (!WiFi.config(local_IP, gateway, subnet)) {
         Serial.println("STA Failed to configure");
@@ -43,41 +72,52 @@ void setup() {
     Serial.println((String)"\nConnected to " + SSID);
 
     Serial.println((String)"IP address: " + WiFi.localIP().toString());
-    server.begin();
-    Serial.print((String)"Open Telnet and connect to IP: " + WiFi.localIP().toString() + " on port " + (String)port);
 }
 
 void loop() {
     while (!client.connected()) {
         client.connect(serverIP, serverPort);
-        delay(200);
         digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
 
         Serial.println("Trying to connect to the server...");
+        recvTimer.reset(millis());
+        delay(200);
     }
 
-    Client *c = &client;
+    if (!client.available()) recvTimer.reset(millis());
 
-    c->setTimeout(10);
+    if (recvTimer.isTime(20, millis())) {
+        Client *c = &client;
+        c->setTimeout(1);
 
-    if (client.available()) {
-        String line = c->readStringUntil('\n');
-        bool value = line.toInt();
-        digitalWrite(5, value);
-        Serial.println(value);
+        byte buffer[1];
+        c->read(buffer, 1);
+
+        newValue = buffer[0];
     }
 
-    if (idleTimer.isTime(100, millis())) {
+    if (filterTimer.isTime(10, millis())) {
+        brightness = filter.filter(newValue, 0.7);
+
+        Serial.println((String)newValue + " " + brightness);
+
+        #if defined (ESP32)
+        ledcWrite(ledChannel, brightness);
+        #else
+        analogWrite(ledPin, brightness);
+        #endif
+    }
+
+    if (idleTimer.isTime(1000, millis()))
         client.println("OK");
+
+    if (sendTimer.isTime(20, millis())) {
+        if (digitalRead(4))
+            client.println(1);
+
+        if (digitalRead(12))
+            client.println(0);
     }
-
-    onButton.onChange(digitalRead(4), [](float state) {
-        if (state) client.println(1);
-    });
-
-    offButton.onChange(digitalRead(12), [](float state) {
-        if (state) client.println(0);
-    });
 
     digitalWrite(LED_BUILTIN, LOW);
 }

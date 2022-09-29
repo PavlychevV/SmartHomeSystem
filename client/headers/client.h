@@ -10,5 +10,4 @@
 #include "misc.h"
 #include "ChangeHandler.h"
 #include "Timer.h"
-#include <Wire.h>
-#include "Adafruit_SHT31.h"
+#include "LowPassFilter.h"

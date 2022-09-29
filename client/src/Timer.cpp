@@ -1,15 +1,17 @@
-#include <stdint.h>
-
 class Timer {    
-    public:
-        uint32_t lastTime = 0;
+public:
+    unsigned int lastTime = 0;
 
-        Timer() { }
+    Timer() { }
 
-        bool isTime(uint32_t interval, uint32_t current) {
-            if (current - lastTime < interval) return false;
+    bool isTime(unsigned int interval, unsigned int current) {
+        if (current - lastTime < interval) return false;
 
-            lastTime = current;
-            return true;
-        }
+        lastTime = current;
+        return true;
+    }
+
+    void reset(unsigned int current) {
+        lastTime = current;
+    }
 };
